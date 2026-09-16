@@ -1,111 +1,306 @@
 # AI Video Dubbing & Vocal Isolation Studio
 
-A unified Streamlit application that downloads or accepts media, obtains or creates subtitles, removes original human vocals with Demucs, creates synchronized Khmer speech with Edge TTS, mixes that speech with the speech-removed background, and muxes the result into the original video stream.
+កម្មវិធី Streamlit សម្រាប់បញ្ចូលសំឡេង AI ភាសាខ្មែរទៅក្នុងវីដេអូ ដកសំឡេងនិយាយដើមដោយ Demucs បង្កើត Subtitle SRT ដោយ faster-whisper និងលាយសំឡេងថ្មីជាមួយតន្ត្រី Sound Effects និងសំឡេងបរិយាកាសដើម។
 
-> Only process content you own or are authorized to use. The app does not bypass DRM, private access controls, paywalls, or login restrictions. API keys are never hardcoded or written to output files.
+## មុខងារសំខាន់ៗ
 
-## Windows installation
+- Upload វីដេអូប្រភេទ MP4, MOV, MKV និង WEBM
+- ទាញយកវីដេអូពី URL ដែល yt-dlp គាំទ្រ
+- Generate Subtitle ជា SRT ដោយ faster-whisper
+- Upload SRT ដែលបានបកប្រែជាភាសាខ្មែរ
+- ពិនិត្យ និងកែអត្ថបទ Start Time និង End Time របស់ Subtitle
+- ដកសំឡេងនិយាយដើមដោយ Demucs
+- បង្កើត AI Voice ជាភាសាខ្មែរដោយ Edge TTS
+- គាំទ្រសំឡេង `km-KH-SreymomNeural` និង `km-KH-PisethNeural`
+- Smart Fit, Strict Timing និង Preserve Complete Speech
+- លាយ `background_audio + generated_ai_voice`
+- Background ducking នៅពេល AI Voice កំពុងនិយាយ
+- Render ជា Final MP4 ដោយរក្សាគុណភាពវីដេអូដើមតាមដែលអាចធ្វើបាន
+- Auto CPU/GPU: ប្រើ NVIDIA CUDA បើមាន និងត្រឡប់ទៅ CPU បើគ្មាន
 
-### 1. Install Python and create a virtual environment
+## តម្រូវការប្រព័ន្ធ
 
-Install 64-bit Python 3.10 or 3.11, then open PowerShell in the project folder:
+- Windows 10 ឬ Windows 11 64-bit
+- Python 3.10 ឬ Python 3.11 ត្រូវបានណែនាំ
+- FFmpeg និង FFprobe នៅក្នុង PATH
+- Internet សម្រាប់ Edge TTS
+- Internet សម្រាប់ទាញ Whisper និង Demucs models នៅពេលប្រើលើកដំបូង
+- NVIDIA GPU ជាជម្រើសបន្ថែមសម្រាប់ CUDA
+
+## Clone Repository
+
+បើក PowerShell ហើយរត់៖
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip wheel setuptools
+git clone https://github.com/YOUR_USERNAME/AI-DUBBING-BY-SNA.git
+cd AI-DUBBING-BY-SNA
 ```
 
-If PowerShell blocks activation, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` in an authorized PowerShell session.
+ប្ដូរ `YOUR_USERNAME` ទៅ GitHub username របស់ម្ចាស់ Repository។
 
-### 2. Install FFmpeg
+## បង្កើត Virtual Environment
 
-Install an FFmpeg Windows build and add its `bin` directory to the system PATH. Restart the terminal and verify:
+```powershell
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip setuptools wheel
+```
+
+បើ PowerShell មិនអនុញ្ញាតឱ្យ Activate៖
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+បន្ទាប់មក Activate ម្ដងទៀត៖
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+## ដំឡើង Dependencies សម្រាប់ CPU
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+ពិនិត្យថា Packages សំខាន់ៗ Import បាន៖
+
+```powershell
+python -c "import streamlit, torch, edge_tts, yt_dlp; from faster_whisper import WhisperModel; print('Dependencies OK')"
+```
+
+## ដំឡើង FFmpeg លើ Windows
+
+ដំឡើង FFmpeg ហើយបន្ថែម Folder `bin` របស់ FFmpeg ទៅ Windows PATH។ បិទ និងបើក Terminal ឡើងវិញ រួចពិនិត្យ៖
 
 ```powershell
 ffmpeg -version
 ffprobe -version
 ```
 
-FFmpeg is a system executable and is intentionally not listed in `requirements.txt`.
+Command ទាំងពីរត្រូវបង្ហាញព័ត៌មាន Version។ FFmpeg មិនមែនជា Python package ហើយមិនត្រូវបានដាក់ក្នុង `requirements.txt` ទេ។
 
-### 3. Install packages
+## ប្រើ NVIDIA GPU និង CPU Fallback
 
-```powershell
-pip install -r requirements.txt
-```
+កម្មវិធីមាន Processor modes ចំនួនបី៖
 
-PyTorch CUDA builds are hardware and CUDA-version specific. If you have a supported NVIDIA GPU, install the matching PyTorch build from the official PyTorch installation selector before or after installing the requirements. Verify with:
+- `auto`: ប្រើ CUDA GPU បើអាចប្រើបាន និង fallback ទៅ CPU បើមិនមាន
+- `cuda`: បង្ខំប្រើ NVIDIA GPU
+- `cpu`: បង្ខំប្រើ CPU
 
-```powershell
-python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
-```
+សម្រាប់ការចែកចាយ និងការប្រើទូទៅ គួរជ្រើស `auto`។
 
-Demucs and faster-whisper fall back to CPU. CPU transcription uses int8 and can be much slower for long media.
-
-### 4. Run
+### ពិនិត្យ NVIDIA Driver
 
 ```powershell
-streamlit run unified_app.py
+nvidia-smi
 ```
 
-## Usage
+### ដំឡើង PyTorch CUDA
 
-### Upload File
+`pip install -r requirements.txt` អាចដំឡើង PyTorch CPU build។ អ្នកប្រើ NVIDIA GPU ត្រូវលុប PyTorch ចាស់ ហើយដំឡើង CUDA wheel ដែលត្រូវនឹងការណែនាំនៅ PyTorch Installation Selector។ ឧទាហរណ៍ CUDA 12.6៖
 
-Open **Upload File**, select MP4, MOV, MKV, WEBM, MP3, WAV, M4A, or FLAC, then click **Prepare uploaded media**. The project is stored under the operating system temporary directory and remains available for downloads until you clear project data or the OS removes temporary files.
+```powershell
+python -m pip uninstall torch torchaudio torchvision -y
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+```
 
-### Paste Link
+ពិនិត្យ CUDA៖
 
-Open **Paste Link**, enter a valid HTTP or HTTPS URL supported by yt-dlp, and click **Download one media item**. Playlist downloading is disabled and only one item is requested. Best video and audio streams are selected and FFmpeg merges them when needed.
+```powershell
+python -c "import torch; print('Torch:', torch.__version__); print('CUDA runtime:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU mode')"
+```
 
-### Obtain subtitles
+បើ `CUDA available: True` កម្មវិធីអាចប្រើ GPU សម្រាប់ Demucs។ faster-whisper GPU ក៏ត្រូវការ CUDA/cuBLAS និង cuDNN ដែលសមស្របជាមួយ CTranslate2 ផងដែរ។ បើ GPU backend បរាជ័យនៅ Auto mode កម្មវិធីព្យាយាមប្រើ CPU int8។
 
-Choose one source:
+## ដំណើរការកម្មវិធី
 
-- **Upload Subtitle**: Upload SRT or VTT in UTF-8, UTF-8-SIG, UTF-16, or a fallback encoding.
-- **Extract Embedded Subtitle**: Select a detected subtitle stream and convert it to UTF-8 SRT.
-- **Download Available Subtitle**: For URL media, inspect manual and automatic captions, select a language, and download without downloading the media again.
-- **AI Automatic Transcription**: Select a faster-whisper model, language, VAD, word timestamps, beam size, optional prompt, and optional English translation.
+```powershell
+python -m streamlit run unified_app.py
+```
 
-The editable table is the authoritative subtitle source for TTS. Save edits before processing. Warnings identify overlaps, empty cues, invalid times, short cues, and long text.
+បើ Browser មិនបើកដោយស្វ័យប្រវត្តិ សូមបើក៖
 
-### Generate AI voice
+```text
+http://localhost:8501
+```
 
-Select Sreymom or Piseth. Smart Fit removes edge silence, uses one or more FFmpeg `atempo` filters, then trims only when necessary. Strict Timing trims at cue end. Preserve Complete Speech allows speech to extend and may overlap later cues.
+## Workflow សម្រាប់បញ្ចូលសំឡេងរឿង
 
-### Vocal separation and mixing
+### 1. បញ្ចូលវីដេអូ
 
-Demucs creates `isolated_vocals` and `background_audio`. The application mixes only `background_audio + generated_ai_voice`. The original audio and isolated vocal track are not included in the final mix by default. Four-stem mode recombines drums, bass, and other as the background.
+1. ចូលផ្នែក Upload File
+2. ជ្រើស MP4, MOV, MKV ឬ WEBM
+3. ចុច `Prepare uploaded media`
+4. រង់ចាំ Media Information បង្ហាញ
 
-Optional ducking lowers the background only inside subtitle cue intervals. A limiter helps prevent clipping.
+### 2. បង្កើត SRT ដោយ faster-whisper
 
-### Render final video
+1. ជ្រើស `Generate SRT with faster-whisper`
+2. ជ្រើស Whisper Model
+3. កំណត់ Original Audio Language ជា `Auto Detect` ឬ Language code ដូចជា `en`
+4. បើក Voice Activity Detection បើសំឡេងនិយាយច្បាស់
+5. ចុច `Generate SRT with faster-whisper`
+6. ចុច `Download SRT for Translation`
 
-The application ignores the source audio, copies the original video stream when MP4 compatibility allows, adds the final mixed AAC track, and matches the original duration. If stream copy fails, it falls back to H.264 using the selected CRF and preset. Subtitles can be omitted, added as a selectable track, or burned into the image.
+Settings ណែនាំសម្រាប់ CPU៖
 
-For burned Khmer subtitles, install a Khmer Unicode font such as Noto Sans Khmer on Windows. FFmpeg/libass must be able to find it. The current UI uses the installed font name; selectable custom font upload can be added without changing the rendering pipeline.
+```text
+Whisper Model: small
+Language: Auto Detect
+Voice Activity Detection: On
+Beam Size: 5
+```
 
-Audio-only inputs support transcription, separation, TTS, mixing, and audio downloads. Video rendering is skipped.
+### 3. បកប្រែ និង Upload SRT
+
+បកប្រែតែអត្ថបទក្នុង SRT ហើយរក្សា Index និង Timestamp ដដែល។ Save ជា UTF-8 `.srt`។
+
+បន្ទាប់មក៖
+
+1. ជ្រើស `Upload SRT`
+2. Upload SRT ដែលបានបកប្រែ
+3. ចុច `Load SRT`
+4. ពិនិត្យតារាង Subtitle
+5. ចុច `Save Subtitle Changes`
+
+### 4. បំបែកសំឡេងដើម
+
+Settings ណែនាំ៖
+
+```text
+Processor: auto
+Demucs Model: htdemucs
+Four Stems: Off
+```
+
+កម្មវិធីបង្កើត៖
+
+- `original_audio`: សំឡេងដើមពីវីដេអូ
+- `isolated_vocals`: សំឡេងនិយាយ ឬច្រៀងដើម
+- `background_audio`: តន្ត្រី Sound Effects និងបរិយាកាសដែលបានកាត់បន្ថយសំឡេងមនុស្ស
+
+### 5. បង្កើត AI Voice
+
+Settings ណែនាំ៖
+
+```text
+AI Voice: Sreymom ឬ Piseth
+Synchronization: Smart Fit
+Maximum Speech Speed: 1.65x
+```
+
+Smart Fit បង្កើនល្បឿនតែ Cue ដែលវែងជាង Subtitle duration ហើយមិនបង្ខំឱ្យគ្រប់ Cue រត់នៅ 1.65x ទេ។
+
+### 6. លាយសំឡេង
+
+Settings ណែនាំ៖
+
+```text
+Background Volume: 75% ដល់ 100%
+AI Voice Volume: 120% ដល់ 140%
+Background Ducking: On
+Ducking Reduction: 8 dB
+```
+
+Final mix ប្រើតែ៖
+
+```text
+background_audio + generated_ai_voice
+```
+
+`original_audio` និង `isolated_vocals` មិនត្រូវបានបញ្ចូលក្នុង Final mix តាមលំនាំដើមទេ។
+
+### 7. Render Final Video
+
+Settings ណែនាំ៖
+
+```text
+CRF: 18
+Preset: fast សម្រាប់សាកល្បង
+Preset: medium សម្រាប់ Final output
+Subtitle Mode: No visible subtitles ឬ Selectable track
+```
+
+កម្មវិធីព្យាយាម Copy Video stream ដើមជាមុន។ បើមិនអាច Copy ទៅ MP4 បាន វាប្រើ H.264 fallback។
 
 ## Outputs
 
-The app can preview and download the final SRT, original extracted WAV, isolated vocals, speech-removed background, generated AI voice, final mixed WAV, final dubbed MP4, and a selected ZIP archive. Large ZIPs are created on disk rather than assembled entirely in memory.
+កម្មវិធីអាចបង្កើត និង Download៖
+
+- Final SRT
+- Original extracted audio
+- Isolated original vocals
+- Speech-removed background audio
+- Generated AI voice
+- Final mixed audio
+- Final dubbed MP4
+- ZIP archive នៃ Outputs ដែលបានជ្រើស
 
 ## Troubleshooting
 
-- **FFmpeg not found**: Add the FFmpeg `bin` directory to PATH, restart the terminal, and rerun `ffmpeg -version` and `ffprobe -version`.
-- **Demucs model download fails**: The first use of a model may require internet access. Retry after checking firewall and connectivity.
-- **CUDA out of memory**: Select CPU, close GPU applications, use the standard `htdemucs` model, or process shorter media.
-- **TTS cue fails**: Check internet access because Edge TTS is an online service. Completed cue files remain in the project, and failed cues are listed in the synchronization report.
-- **No online subtitles**: Switch to AI Automatic Transcription.
-- **Stream copy fails**: The app automatically falls back to H.264. MKV, MOV, or WEBM video codecs are not always MP4-compatible.
-- **Burned subtitles fail**: Verify the FFmpeg build includes libass and install a Khmer-compatible font.
-- **Long processing time**: Use CUDA when available, a smaller Whisper model, and two-stem Demucs mode.
-- **Windows file lock**: Stop media playback, close duplicate Streamlit sessions, and retry clearing project data.
+### FFmpeg not found
 
-## Privacy and API keys
+```powershell
+ffmpeg -version
+ffprobe -version
+```
 
-Local Whisper and Demucs run on the machine. Edge TTS sends subtitle text to its service to synthesize speech. URL downloads contact the source platform. Do not process confidential media unless those data flows are acceptable.
+បើ Command មិនដំណើរការ សូមដំឡើង FFmpeg និងកែ Windows PATH។
 
-The current implementation does not fake API transcription. A modular API TTS base class exists, but selecting an unconfigured external provider raises a setup error. Any future API keys should be entered with `st.text_input(type="password")`, read from environment variables or Streamlit secrets, excluded from logs, and never saved with outputs.
+### CUDA បង្ហាញ False
+
+```powershell
+nvidia-smi
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+បើ `torch.version.cuda` ជា `None` អាចមានន័យថា PyTorch CPU-only build ត្រូវបានដំឡើង។
+
+### faster-whisper បង្កើត No cues found
+
+- ស្ដាប់ Original Extracted Audio ថាមានសំឡេងនិយាយឬអត់
+- សាកបិទ Voice Activity Detection
+- កំណត់ Language code ដោយផ្ទាល់
+- សាក Model `small` ឬ `medium`
+
+### Edge TTS មិន Generate Audio
+
+- ពិនិត្យ Internet
+- Update package៖
+
+```powershell
+python -m pip install --upgrade edge-tts
+```
+
+- ពិនិត្យ Technical Logs ក្នុងកម្មវិធី
+
+### Processing យូរ
+
+CPU mode អាចយូរ ជាពិសេស Demucs។ ប្រើ៖
+
+```text
+Demucs: htdemucs
+Four Stems: Off
+Whisper: small
+Preset: fast
+```
+
+## Update Source ពី GitHub
+
+```powershell
+git pull
+python -m pip install -r requirements.txt
+```
+
+## Privacy
+
+- Demucs និង local faster-whisper ដំណើរការនៅលើកុំព្យូទ័រ
+- Edge TTS ត្រូវផ្ញើអត្ថបទ Subtitle ទៅសេវា TTS ដើម្បីបង្កើតសំឡេង
+- URL download ទាក់ទងទៅ Platform ប្រភព
+- កុំ Commit API keys, cookies, `.env` ឬ `.streamlit/secrets.toml` ទៅ GitHub
+
+## ការប្រើប្រាស់ដោយស្របច្បាប់
+
+ប្រើតែ Video និង Audio ដែលអ្នកជាម្ចាស់ ឬមានការអនុញ្ញាតឱ្យប្រើ។ កម្មវិធីនេះមិនមានគោលបំណងរំលង DRM, Paywall, Login restriction ឬ Access control ទេ។

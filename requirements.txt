@@ -1,12 +1,22 @@
-streamlit>=1.35
-pandas>=2.0
+# Core application
+streamlit>=1.35,<2.0
+pandas>=2.0,<3.0
 pydub>=0.25.1
-edge-tts>=6.1.12
+
+# Subtitle and media input
 pysrt>=1.1.2
 webvtt-py>=0.5.1
 yt-dlp>=2024.7.1
+
+# Speech-to-text and text-to-speech
 faster-whisper>=1.0.3
+edge-tts>=6.1.12
+
+# Vocal separation and audio processing
 demucs>=4.0.1
+soundfile>=0.12.1
+
+# CPU installation defaults. GPU users should reinstall these packages
+# with the correct CUDA wheel from the official PyTorch selector.
 torch>=2.1
 torchaudio>=2.1
-soundfile>=0.12.1
