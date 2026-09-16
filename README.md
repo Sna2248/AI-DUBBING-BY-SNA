@@ -36,7 +36,7 @@ git clone https://github.com/Sna2248/AI-DUBBING-BY-SNA.git
 cd AI-DUBBING-BY-SNA
 ```
 
-ប្ដូរ `YOUR_USERNAME` ទៅ GitHub username របស់ម្ចាស់ Repository។
+ប្ដូរ `Sna2248` ទៅ GitHub Sna2248 របស់ម្ចាស់ Repository។
 
 ## បង្កើត Virtual Environment
 
