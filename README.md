@@ -32,7 +32,7 @@
 បើក PowerShell ហើយរត់៖
 
 ```powershell
-https://github.com/Sna2248/AI-DUBBING-BY-SNA.git
+git clone https://github.com/Sna2248/AI-DUBBING-BY-SNA.git
 cd AI-DUBBING-BY-SNA
 ```
 
