@@ -1,0 +1,70 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# PyInstaller output
+build/
+dist/
+.dist/
+*.toc
+*.manifest
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Private settings
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+
+# FFmpeg executable copies
+ffmpeg.exe
+ffprobe.exe
+
+# Generated video and audio
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+
+# Generated subtitles
+*.srt
+*.vtt
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Models and temporary outputs
+models/
+weights/
+checkpoints/
+demucs/
+tts_clips/
+outputs/
+temp/
+tmp/
+.cache/
+
+# Logs
+*.log
+
+# Editors and Windows
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

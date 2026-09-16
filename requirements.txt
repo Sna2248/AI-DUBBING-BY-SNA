@@ -1,0 +1,12 @@
+streamlit>=1.35
+pandas>=2.0
+pydub>=0.25.1
+edge-tts>=6.1.12
+pysrt>=1.1.2
+webvtt-py>=0.5.1
+yt-dlp>=2024.7.1
+faster-whisper>=1.0.3
+demucs>=4.0.1
+torch>=2.1
+torchaudio>=2.1
+soundfile>=0.12.1
