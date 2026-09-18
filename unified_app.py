@@ -136,6 +136,7 @@ def init_state() -> None:
         "subtitle_srt":None, "subtitle_cues":[], "isolated_vocals":None,
         "background_audio":None, "generated_ai_voice":None,
         "final_mixed_audio":None, "final_video":None, "media_info":None,
+        "output_dir":None, "persisted_final_video":None,
         "source_url":"", "url_info":None, "logs":[], "settings":{},
         "signatures":{}, "tts_report":{}, "translated_srt_loaded":False,
         "pipeline_status":{step:"Not started" for step in STEPS},
@@ -463,6 +464,7 @@ def generate_tts(settings: Settings, retry_indexes: Optional[set[int]]=None) -> 
     cues=[Cue(**x) for x in st.session_state.subtitle_cues]; root=Path(st.session_state.project_dir); clips=root/"tts_clips"; clips.mkdir(exist_ok=True)
     provider=EdgeTTSProvider(); report={"total":len(cues),"success":0,"failed":0,"accelerated":0,"trimmed":0,"extreme":0,"failed_indexes":[]}; overlays=[]; end=max(c.end_ms for c in cues)
     async def synth_all() -> None:
+        nonlocal end
         for cue in cues:
             raw=clips/f"cue_{cue.index:05d}.mp3"
             if retry_indexes is None or cue.index in retry_indexes or not raw.exists():
@@ -503,6 +505,73 @@ def escape_sub_filter(path: Path) -> str:
     value=str(path.resolve()).replace("\\","/").replace(":","\\:").replace("'","\\'").replace("[","\\[").replace("]","\\]").replace(",","\\,")
     return value
 
+def persistent_output_dir() -> Path:
+    """Create a persistent output folder next to the application source."""
+    app_dir = Path(__file__).resolve().parent
+    output_dir = app_dir / "output"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        test_file = output_dir / ".write_test"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+    except OSError:
+        output_dir = Path.home() / "AI_Dubbing_Studio_Output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    st.session_state.output_dir = str(output_dir)
+    return output_dir
+
+
+def validate_final_video(path: Path, timeout: int = 120) -> dict[str, Any]:
+    """Validate that the rendered MP4 contains playable video and audio streams."""
+    if not path.exists() or path.stat().st_size == 0:
+        raise PipelineError("Final video file មិនបានបង្កើត ឬមានទំហំ 0 byte។")
+    result = run_cmd(
+        [ffprobe(), "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
+        timeout,
+        "Final video validation",
+    )
+    data = json.loads(result.stdout or "{}")
+    streams = data.get("streams", [])
+    if not any(stream.get("codec_type") == "video" for stream in streams):
+        raise PipelineError("Final MP4 មិនមាន Video stream។")
+    if not any(stream.get("codec_type") == "audio" for stream in streams):
+        raise PipelineError("Final MP4 មិនមាន Audio stream។")
+    duration = float(data.get("format", {}).get("duration") or 0)
+    if duration <= 0:
+        raise PipelineError("Final MP4 មាន duration មិនត្រឹមត្រូវ។")
+    return {"duration": duration, "size": path.stat().st_size}
+
+
+def persist_final_video(rendered: Path, source_video: Path, timeout: int) -> Path:
+    """Copy a validated final video into the persistent output directory."""
+    validate_final_video(rendered, min(timeout, 120))
+    output_dir = persistent_output_dir()
+    source_name = sanitize_filename(source_video.stem, "dubbed_video")
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    destination = output_dir / f"{source_name}_dubbed_{timestamp}.mp4"
+    counter = 1
+    while destination.exists():
+        destination = output_dir / f"{source_name}_dubbed_{timestamp}_{counter}.mp4"
+        counter += 1
+    shutil.copy2(rendered, destination)
+    validate_final_video(destination, min(timeout, 120))
+    st.session_state.persisted_final_video = str(destination)
+    st.session_state.final_video = str(destination)
+    log(f"Final video saved permanently: {destination}")
+    return destination
+
+
+def open_output_folder(path: Path) -> None:
+    """Open a trusted application output directory on the local desktop."""
+    path = path.resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)], shell=False)
+    else:
+        subprocess.Popen(["xdg-open", str(path)], shell=False)
+
 def render_video(settings: Settings, font_file: Optional[Path]=None) -> Optional[Path]:
     info=st.session_state.media_info
     if not info or not info["has_video"]: set_status(7,"Completed"); return None
@@ -528,8 +597,9 @@ def render_video(settings: Settings, font_file: Optional[Path]=None) -> Optional
             vf=["-vf",f"subtitles='{sub}'{fonts}:force_style='{style}'"]
         fallback=base+vf+["-c:v","libx264","-crf",str(settings.crf),"-preset",settings.preset,"-c:a","aac","-b:a","320k","-t",f"{duration:.3f}","-movflags","+faststart",str(out)]
         run_cmd(fallback,settings.subprocess_timeout,"H.264 fallback render")
-    st.session_state.final_video=str(out); st.session_state.signatures["video_signature"]=signature(st.session_state.signatures.get("mixing_signature"),settings.crf,settings.preset,settings.subtitle_mode,settings.duration_policy)
-    set_status(7,"Completed"); return out
+    saved_video = persist_final_video(out, video, settings.subprocess_timeout)
+    st.session_state.final_video=str(saved_video); st.session_state.signatures["video_signature"]=signature(st.session_state.signatures.get("mixing_signature"),settings.crf,settings.preset,settings.subtitle_mode,settings.duration_policy)
+    set_status(7,"Completed"); return saved_video
 
 def build_zip(selected: list[str]) -> Path:
     out=Path(st.session_state.project_dir)/"selected_outputs.zip"
@@ -559,11 +629,15 @@ def run_complete(settings: Settings, transcribe_options: dict[str,Any]) -> None:
     set_status(7,"Processing"); render_video(settings)
     set_status(8,"Completed")
 
-def file_download(label: str, key: str, mime: str) -> None:
+def file_download(label: str, key: str, mime: str, element_id: str = "") -> None:
+    """Render a download button with a unique deterministic Streamlit key."""
     value=st.session_state.get(key)
     if value and Path(value).exists():
         path=Path(value)
-        with path.open("rb") as f: st.download_button(label,data=f,file_name=path.name,mime=mime,use_container_width=True,key="dl_"+key)
+        slug=re.sub(r"[^a-zA-Z0-9]+","_",label).strip("_").lower()
+        unique=element_id or slug or hashlib.sha1(label.encode("utf-8")).hexdigest()[:10]
+        with path.open("rb") as file_handle:
+            st.download_button(label,data=file_handle,file_name=path.name,mime=mime,use_container_width=True,key=f"download_{key}_{unique}")
 
 def main() -> None:
     st.set_page_config(page_title=APP_NAME,page_icon="🎬",layout="wide")
@@ -649,7 +723,7 @@ def main() -> None:
                 with st.expander("មើល faster-whisper Logs"):
                     st.code("\n".join(st.session_state.logs[-100:]), language="text")
         if st.session_state.subtitle_srt and Path(st.session_state.subtitle_srt).exists() and not st.session_state.translated_srt_loaded:
-            file_download("⬇️ Download SRT for Translation","subtitle_srt","application/x-subrip")
+            file_download("⬇️ Download SRT for Translation","subtitle_srt","application/x-subrip","whisper_srt")
     if st.session_state.subtitle_cues:
         st.subheader("3. "+t["review"])
         q=st.text_input("Search subtitle text")
@@ -661,7 +735,7 @@ def main() -> None:
                 save_cues(validate_cues(cues,fail=True)); invalidate_from(5); st.success("Edited subtitles saved.")
             except Exception as exc: st.error(str(exc))
         for warning in st.session_state.get("subtitle_warnings",[]): st.warning(warning)
-        file_download("Download final SRT","subtitle_srt","application/x-subrip")
+        file_download("Download final SRT","subtitle_srt","application/x-subrip","final_srt")
     if st.button("✨ "+t["start"],type="primary",use_container_width=True):
         try:
             with st.status("Running complete pipeline",expanded=True): run_complete(settings,transcribe_options)
@@ -690,7 +764,23 @@ def main() -> None:
     outputs=[("Original extracted audio","original_audio","audio/wav"),("Isolated original vocals","isolated_vocals","audio/wav"),("Speech-removed background","background_audio","audio/wav"),("Generated AI voice","generated_ai_voice","audio/wav"),("Final mixed audio","final_mixed_audio","audio/wav")]
     for label,key,mime in outputs:
         if st.session_state.get(key): st.markdown("**"+label+"**"); st.audio(st.session_state[key]); file_download("Download "+label,key,mime)
-    if st.session_state.final_video: st.video(st.session_state.final_video); file_download("Download final dubbed video","final_video","video/mp4")
+    if st.session_state.final_video and Path(st.session_state.final_video).exists():
+        final_path = Path(st.session_state.final_video)
+        st.markdown("**Final dubbed video**")
+        st.success(f"Final Video បានរក្សាទុកក្នុង Folder៖ {final_path.parent}")
+        st.code(str(final_path), language="text")
+        try:
+            st.video(str(final_path))
+        except Exception as preview_error:
+            log(f"Browser preview unavailable: {preview_error}")
+            st.warning("Browser មិនអាច Preview Video នេះបាន ប៉ុន្តែ File ត្រូវបានរក្សាទុកក្នុង Output Folder រួច។ សូម Download ឬបើកជាមួយ VLC។")
+        file_download("Download final dubbed video","final_video","video/mp4","final_video_download")
+        if st.button("📂 Open Output Folder", use_container_width=True, key="open_output_folder"):
+            try:
+                open_output_folder(final_path.parent)
+                st.success("បានបើក Output Folder។")
+            except Exception as folder_error:
+                st.error(f"មិនអាចបើក Output Folder៖ {folder_error}")
     available=[k for k in ["subtitle_srt","background_audio","generated_ai_voice","final_mixed_audio","final_video","original_audio","isolated_vocals"] if st.session_state.get(k)]
     if available:
         selected=st.multiselect("ZIP contents",available,default=[x for x in available if x in {"subtitle_srt","background_audio","generated_ai_voice","final_mixed_audio","final_video"}])
