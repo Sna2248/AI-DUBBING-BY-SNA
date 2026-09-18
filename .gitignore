@@ -68,3 +68,5 @@ tmp/
 .idea/
 Thumbs.db
 desktop.ini
+# Generated final videos
+output/
